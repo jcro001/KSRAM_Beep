@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ExtensionInfo
+    id="ksram-beep"
+    displayName="@string/app_name"
+    scansDevices="false">
+</ExtensionInfo>
