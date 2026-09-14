@@ -15,13 +15,14 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
 
     private var lastFrontGearIndex: Int = -1
     private var lastRearGearIndex: Int = -1
+    private var lastEffectiveRearMax: Int = -1
 
     override fun onCreate() {
         super.onCreate()
         karooSystem = KarooSystemService(this)
         karooSystem.connect { connected ->
             if (connected) {
-                Log.d("KSRAMBeep", "Connected to Karoo System")
+                if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Connected to Karoo System")
                 subscribeToGears()
             }
         }
@@ -45,43 +46,56 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         val sharedPreferences = getSharedPreferences("ksram_beep_prefs", Context.MODE_PRIVATE)
         val lowGearAlertEnabled = sharedPreferences.getBoolean("low_gear_alert_enabled", true)
         val highGearAlertEnabled = sharedPreferences.getBoolean("high_gear_alert_enabled", true)
+        val manualCassetteSize = sharedPreferences.getInt("pref_cassette_size", 0)
 
         val frontGear = values[DataType.Field.SHIFTING_FRONT_GEAR]?.toInt() ?: -1
+        val frontMax = values[DataType.Field.SHIFTING_FRONT_GEAR_MAX]?.toInt() ?: -1
         val rearGear = values[DataType.Field.SHIFTING_REAR_GEAR]?.toInt() ?: -1
-        val rearMax = values[DataType.Field.SHIFTING_REAR_GEAR_MAX]?.toInt() ?: -1
+        val sdkRearMax = values[DataType.Field.SHIFTING_REAR_GEAR_MAX]?.toInt() ?: -1
 
-        Log.d("KSRAMBeep", "Update - Front: $frontGear, Rear: $rearGear, Max: $rearMax, LastFront: $lastFrontGearIndex, LastRear: $lastRearGearIndex")
+        // 1. Calculate effectiveRearMax including manual override and SRAM Cross-Chain protection
+        val baseMax = if (manualCassetteSize > 0) manualCassetteSize else sdkRearMax
+        var effectiveRearMax = baseMax
+        var crossChainApplied = false
+        if (frontMax > 1 && frontGear == 1 && baseMax > 1) {
+            effectiveRearMax = baseMax - 1
+            crossChainApplied = true
+        }
 
-        if (rearMax <= 0 || rearGear <= 0) {
-            Log.d("KSRAMBeep", "Invalid gear data: rearMax=$rearMax, rearGear=$rearGear")
+        if (effectiveRearMax <= 0 || rearGear <= 0) {
+            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Invalid gear data: effectiveMax=$effectiveRearMax, rearGear=$rearGear")
             return
         }
 
-        // Track front shift activity to suppress compensation beeps
+        // 2. Determine state changes
         val frontChanged = lastFrontGearIndex != -1 && frontGear != lastFrontGearIndex
+        val rearChanged = lastRearGearIndex != -1 && rearGear != lastRearGearIndex
+        val limitChanged = lastEffectiveRearMax != -1 && effectiveRearMax != lastEffectiveRearMax
 
-        // Detect when the rear gear is hitting limits
-        if (!frontChanged) {
-            if (rearGear == 1 && lastRearGearIndex != 1) {
-                Log.d("KSRAMBeep", "Trigger: Reached lowest gear (1). Enabled: $lowGearAlertEnabled")
-                if (lowGearAlertEnabled) {
-                    playBeep(3000) // Lower pitch beep
-                }
-            } else if (rearGear == rearMax && lastRearGearIndex != rearMax) {
-                Log.d("KSRAMBeep", "Trigger: Reached highest gear ($rearMax). Enabled: $highGearAlertEnabled")
-                if (highGearAlertEnabled) {
-                    playBeep(3800) // Higher pitch beep
-                }
-            } else {
-                Log.d("KSRAMBeep", "No limit reached or already at limit. Rear: $rearGear, Max: $rearMax")
-            }
-        } else {
-            Log.d("KSRAMBeep", "Suppressed: Front changed from $lastFrontGearIndex to $frontGear (Compensation Shift)")
+        if (BuildConfig.DEBUG) {
+            Log.d("KSRAMBeep", "Update - Front: $frontGear/$frontMax, Rear: $rearGear, Max: $effectiveRearMax (SDK: $sdkRearMax, CrossChain: $crossChainApplied), Changes: [F:$frontChanged, R:$rearChanged, L:$limitChanged]")
         }
 
-        // Always save state positions
+        // 3. Trigger Logic
+        if (!frontChanged) {
+            // Check Low Gear (Cog 1)
+            if (rearGear == 1 && (rearChanged || limitChanged)) {
+                if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Trigger: Reached low gear limit (1). Enabled: $lowGearAlertEnabled")
+                if (lowGearAlertEnabled) playBeep(3000)
+            } 
+            // Check High Gear (Cog effectiveRearMax)
+            else if (rearGear == effectiveRearMax && (rearChanged || limitChanged)) {
+                if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Trigger: Reached high gear limit ($effectiveRearMax). Enabled: $highGearAlertEnabled")
+                if (highGearAlertEnabled) playBeep(3800)
+            }
+        } else {
+            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Suppressed: Front shift detected (Compensation/Direct Front Shift)")
+        }
+
+        // 4. Update State Trackers
         lastRearGearIndex = rearGear
         lastFrontGearIndex = frontGear
+        lastEffectiveRearMax = effectiveRearMax
     }
 
     private fun playBeep(frequency: Int) {
