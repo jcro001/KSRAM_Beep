@@ -50,7 +50,12 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         val rearGear = values[DataType.Field.SHIFTING_REAR_GEAR]?.toInt() ?: -1
         val rearMax = values[DataType.Field.SHIFTING_REAR_GEAR_MAX]?.toInt() ?: -1
 
-        if (rearMax <= 0 || rearGear <= 0) return
+        Log.d("KSRAMBeep", "Update - Front: $frontGear, Rear: $rearGear, Max: $rearMax, LastFront: $lastFrontGearIndex, LastRear: $lastRearGearIndex")
+
+        if (rearMax <= 0 || rearGear <= 0) {
+            Log.d("KSRAMBeep", "Invalid gear data: rearMax=$rearMax, rearGear=$rearGear")
+            return
+        }
 
         // Track front shift activity to suppress compensation beeps
         val frontChanged = lastFrontGearIndex != -1 && frontGear != lastFrontGearIndex
@@ -58,18 +63,20 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         // Detect when the rear gear is hitting limits
         if (!frontChanged) {
             if (rearGear == 1 && lastRearGearIndex != 1) {
-                Log.d("KSRAMBeep", "Reached lowest gear (largest cog)")
+                Log.d("KSRAMBeep", "Trigger: Reached lowest gear (1). Enabled: $lowGearAlertEnabled")
                 if (lowGearAlertEnabled) {
                     playBeep(3000) // Lower pitch beep
                 }
             } else if (rearGear == rearMax && lastRearGearIndex != rearMax) {
-                Log.d("KSRAMBeep", "Reached highest gear (smallest cog)")
+                Log.d("KSRAMBeep", "Trigger: Reached highest gear ($rearMax). Enabled: $highGearAlertEnabled")
                 if (highGearAlertEnabled) {
                     playBeep(3800) // Higher pitch beep
                 }
+            } else {
+                Log.d("KSRAMBeep", "No limit reached or already at limit. Rear: $rearGear, Max: $rearMax")
             }
         } else {
-            Log.d("KSRAMBeep", "Rear limit shift suppressed: Front gear changed (Compensation Shift)")
+            Log.d("KSRAMBeep", "Suppressed: Front changed from $lastFrontGearIndex to $frontGear (Compensation Shift)")
         }
 
         // Always save state positions
