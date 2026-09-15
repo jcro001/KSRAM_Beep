@@ -84,6 +84,9 @@ fun KSRAMBeepScreen() {
     var cassetteSize by remember {
         mutableIntStateOf(sharedPreferences.getInt("pref_cassette_size", 0))
     }
+    var drivetrainBrand by remember {
+        mutableStateOf(sharedPreferences.getString("pref_drivetrain_brand", "Auto") ?: "Auto")
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -152,6 +155,14 @@ fun KSRAMBeepScreen() {
                 onSizeSelected = { size ->
                     cassetteSize = size
                     sharedPreferences.edit().putInt("pref_cassette_size", size).apply()
+                }
+            )
+
+            DrivetrainBrandCard(
+                selectedBrand = drivetrainBrand,
+                onBrandSelected = { brand ->
+                    drivetrainBrand = brand
+                    sharedPreferences.edit().putString("pref_drivetrain_brand", brand).apply()
                 }
             )
 
@@ -281,6 +292,83 @@ fun CassetteSizeCard(
                             text = label,
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.padding(start = 16.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DrivetrainBrandCard(selectedBrand: String, onBrandSelected: (String) -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(24.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Rounded.Settings,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Drivetrain Brand",
+                    modifier = Modifier.padding(start = 12.dp),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = "Shimano does not block the 11th cog in small ring. SRAM AXS often does.",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+            )
+
+            val options = listOf("Auto", "SRAM", "Shimano")
+            options.forEach { option ->
+                val isSelected = selectedBrand == option
+                Card(
+                    onClick = { onBrandSelected(option) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isSelected)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = isSelected,
+                            onClick = null,
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.onPrimary,
+                                unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        )
+                        Text(
+                            text = option,
+                            modifier = Modifier.padding(start = 12.dp),
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected)
+                                MaterialTheme.colorScheme.onPrimary
+                            else
+                                MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }

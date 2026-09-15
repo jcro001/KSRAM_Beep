@@ -47,17 +47,22 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         val lowGearAlertEnabled = sharedPreferences.getBoolean("low_gear_alert_enabled", true)
         val highGearAlertEnabled = sharedPreferences.getBoolean("high_gear_alert_enabled", true)
         val manualCassetteSize = sharedPreferences.getInt("pref_cassette_size", 0)
+        val drivetrainBrand = sharedPreferences.getString("pref_drivetrain_brand", "Auto") ?: "Auto"
 
         val frontGear = values[DataType.Field.SHIFTING_FRONT_GEAR]?.toInt() ?: -1
         val frontMax = values[DataType.Field.SHIFTING_FRONT_GEAR_MAX]?.toInt() ?: -1
         val rearGear = values[DataType.Field.SHIFTING_REAR_GEAR]?.toInt() ?: -1
         val sdkRearMax = values[DataType.Field.SHIFTING_REAR_GEAR_MAX]?.toInt() ?: -1
 
-        // 1. Calculate effectiveRearMax including manual override and SRAM Cross-Chain protection
+        // 1. Calculate effectiveRearMax including manual override and Brand-specific protection
         val baseMax = if (manualCassetteSize > 0) manualCassetteSize else sdkRearMax
         var effectiveRearMax = baseMax
         var crossChainApplied = false
-        if (frontMax > 1 && frontGear == 1 && baseMax > 1) {
+
+        // SRAM Cross-Chain protection: reduce limit by 1 in small ring if frontMax > 1
+        // Shimano typically doesn't block electronically, so we skip this logic for Shimano.
+        val shouldApplySramLogic = drivetrainBrand == "SRAM" || drivetrainBrand == "Auto"
+        if (shouldApplySramLogic && frontMax > 1 && frontGear == 1 && baseMax > 1) {
             effectiveRearMax = baseMax - 1
             crossChainApplied = true
         }
