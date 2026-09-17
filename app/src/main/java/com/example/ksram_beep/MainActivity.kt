@@ -27,14 +27,19 @@ import androidx.compose.material.icons.automirrored.rounded.DirectionsBike
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FormatListNumbered
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
@@ -49,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -87,6 +93,9 @@ fun KSRAMBeepScreen() {
     var drivetrainBrand by remember {
         mutableStateOf(sharedPreferences.getString("pref_drivetrain_brand", "Auto") ?: "Auto")
     }
+    var autoDetectedBrand by remember {
+        mutableStateOf(sharedPreferences.getString("detected_brand", "Unknown"))
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -109,28 +118,27 @@ fun KSRAMBeepScreen() {
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             StatusCard(
-                title = "Extension Status",
-                status = "Active & Running",
+                title = "Status",
+                status = if (drivetrainBrand == "Auto") "Auto ($autoDetectedBrand)" else "Active ($drivetrainBrand)",
                 icon = Icons.Rounded.CheckCircle,
                 isActive = true
             )
 
             Text(
-                text = "Alert Settings",
-                style = MaterialTheme.typography.titleMedium,
+                text = "Settings",
+                style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(top = 8.dp)
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 4.dp)
             )
 
-            ToggleSettingCard(
-                title = "Lowest Gear Limit Alert",
-                description = "Beep when reaching the largest climbing cog (3000 Hz)",
+            CompactToggleCard(
+                title = "Low Gear Alert",
                 icon = Icons.Rounded.GraphicEq,
                 checked = lowGearAlertEnabled,
                 onCheckedChange = { isChecked ->
@@ -139,9 +147,8 @@ fun KSRAMBeepScreen() {
                 }
             )
 
-            ToggleSettingCard(
-                title = "Highest Gear Limit Alert",
-                description = "Beep when reaching the smallest speed cog (3800 Hz)",
+            CompactToggleCard(
+                title = "High Gear Alert",
                 icon = Icons.Rounded.AudioFile,
                 checked = highGearAlertEnabled,
                 onCheckedChange = { isChecked ->
@@ -150,225 +157,136 @@ fun KSRAMBeepScreen() {
                 }
             )
 
-            CassetteSizeCard(
-                selectedSize = cassetteSize,
-                onSizeSelected = { size ->
+            DropdownSettingCard(
+                title = "Cassette Size",
+                icon = Icons.Rounded.FormatListNumbered,
+                selectedValue = when(cassetteSize) {
+                    0 -> "Auto"
+                    else -> "${cassetteSize}S"
+                },
+                options = listOf(0 to "Auto", 10 to "10S", 11 to "11S", 12 to "12S", 13 to "13S"),
+                onOptionSelected = { size ->
                     cassetteSize = size
                     sharedPreferences.edit().putInt("pref_cassette_size", size).apply()
                 }
             )
 
-            DrivetrainBrandCard(
-                selectedBrand = drivetrainBrand,
-                onBrandSelected = { brand ->
+            DropdownSettingCard(
+                title = "Drivetrain",
+                icon = Icons.Rounded.Settings,
+                selectedValue = drivetrainBrand,
+                options = listOf("Auto" to "Auto", "SRAM" to "SRAM", "Shimano" to "Shimano"),
+                onOptionSelected = { brand ->
                     drivetrainBrand = brand
                     sharedPreferences.edit().putString("pref_drivetrain_brand", brand).apply()
                 }
             )
 
             Text(
-                text = "System Info",
-                style = MaterialTheme.typography.titleMedium,
+                text = "Extension Info",
+                style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(top = 8.dp)
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 4.dp)
             )
-
-            InfoCard(
-                title = "Drivetrain",
-                description = "SRAM eTap/AXS Compatible",
-                icon = Icons.AutoMirrored.Rounded.DirectionsBike
-            )
-
-            InfoCard(
-                title = "Compensation Shifts",
-                description = "Automatically suppressed to avoid noise",
-                icon = Icons.AutoMirrored.Rounded.VolumeUp
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ),
-                shape = RoundedCornerShape(24.dp)
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Settings,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "• Drivetrain Mode: Filters out front shift compensations and adjusts automated cross-chain limits based on paired hardware.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "The extension runs automatically in the background during your rides.",
-                        modifier = Modifier.padding(start = 12.dp),
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "• Compensation Shift Muting: Automatically running to suppress transient audio alerts during front ring operations.",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
             
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
 
 @Composable
-fun CassetteSizeCard(
-    selectedSize: Int,
-    onSizeSelected: (Int) -> Unit
+fun <T> DropdownSettingCard(
+    title: String,
+    icon: ImageVector,
+    selectedValue: String,
+    options: List<Pair<T, String>>,
+    onOptionSelected: (T) -> Unit
 ) {
-    val options = listOf(
-        0 to "Auto (SDK)",
-        10 to "10 Speed",
-        11 to "11 Speed",
-        12 to "12 Speed",
-        13 to "13 Speed"
-    )
+    var expanded by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Rounded.FormatListNumbered,
+                    imageVector = icon,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(20.dp)
                 )
                 Text(
-                    text = "Cassette Size Override",
-                    modifier = Modifier.padding(start = 16.dp),
-                    style = MaterialTheme.typography.bodyLarge,
+                    text = title,
+                    modifier = Modifier.padding(start = 12.dp),
+                    style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold
                 )
             }
             
-            Text(
-                text = "Manual override if the SDK reports incorrect gear counts.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 40.dp, top = 4.dp, bottom = 12.dp)
-            )
-
-            HorizontalDivider(
-                modifier = Modifier.padding(start = 40.dp, bottom = 8.dp),
-                color = MaterialTheme.colorScheme.outlineVariant
-            )
-
-            Column(Modifier.selectableGroup().padding(start = 32.dp)) {
-                options.forEach { (value, label) ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .selectable(
-                                selected = (value == selectedSize),
-                                onClick = { onSizeSelected(value) },
-                                role = Role.RadioButton
-                            )
-                            .padding(horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = (value == selectedSize),
-                            onClick = null,
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary
-                            )
-                        )
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.padding(start = 16.dp)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun DrivetrainBrandCard(selectedBrand: String, onBrandSelected: (String) -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
-        )
-    ) {
-        Column(modifier = Modifier.padding(24.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Rounded.Settings,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Drivetrain Brand",
-                    modifier = Modifier.padding(start = 12.dp),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Text(
-                text = "Shimano does not block the 11th cog in small ring. SRAM AXS often does.",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
-                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
-            )
-
-            val options = listOf("Auto", "SRAM", "Shimano")
-            options.forEach { option ->
-                val isSelected = selectedBrand == option
-                Card(
-                    onClick = { onBrandSelected(option) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isSelected)
-                            MaterialTheme.colorScheme.primary
-                        else
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
-                    )
+            Box {
+                OutlinedCard(
+                    onClick = { expanded = true },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                 ) {
                     Row(
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth(),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        RadioButton(
-                            selected = isSelected,
-                            onClick = null,
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.onPrimary,
-                                unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        )
                         Text(
-                            text = option,
-                            modifier = Modifier.padding(start = 12.dp),
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected)
-                                MaterialTheme.colorScheme.onPrimary
-                            else
-                                MaterialTheme.colorScheme.onSurface
+                            text = selectedValue,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Icon(
+                            imageVector = Icons.Rounded.ExpandMore,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp).padding(start = 4.dp)
+                        )
+                    }
+                }
+                
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    options.forEach { (value, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = {
+                                onOptionSelected(value)
+                                expanded = false
+                            }
                         )
                     }
                 }
@@ -378,59 +296,58 @@ fun DrivetrainBrandCard(selectedBrand: String, onBrandSelected: (String) -> Unit
 }
 
 @Composable
-fun ToggleSettingCard(
+fun CompactToggleCard(
     title: String,
-    description: String,
     icon: ImageVector,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
             modifier = Modifier
-                .padding(20.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(20.dp)
                 )
-                Column(modifier = Modifier.padding(start = 16.dp, end = 8.dp)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = title,
+                    modifier = Modifier.padding(start = 12.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
             }
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                    checkedTrackColor = MaterialTheme.colorScheme.primary
-                )
+                modifier = Modifier.scale(0.8f)
             )
+        }
+    }
+}
+
+@Composable
+fun MiniInfoCard(title: String, value: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(text = title, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+            Text(text = value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -439,43 +356,28 @@ fun ToggleSettingCard(
 fun StatusCard(title: String, status: String, icon: ImageVector, isActive: Boolean) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
+            containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
         )
     ) {
         Row(
-            modifier = Modifier
-                .padding(24.dp)
-                .fillMaxWidth(),
+            modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                        shape = RoundedCornerShape(16.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-            Column(modifier = Modifier.padding(start = 16.dp)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(24.dp)
+            )
+            Column(modifier = Modifier.padding(start = 12.dp)) {
+                Text(text = title, style = MaterialTheme.typography.labelSmall)
                 Text(
                     text = status,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                 )
             }
         }
