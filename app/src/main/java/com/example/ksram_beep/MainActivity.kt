@@ -94,10 +94,13 @@ fun KSRAMBeepScreen() {
         mutableStateOf(sharedPreferences.getString("pref_drivetrain_brand", "Auto") ?: "Auto")
     }
     var autoDetectedBrand by remember {
-        mutableStateOf(sharedPreferences.getString("detected_brand", "None"))
+        mutableStateOf(sharedPreferences.getString("detected_brand", "None") ?: "None")
+    }
+    var detectedSourceName by remember {
+        mutableStateOf(sharedPreferences.getString("detected_source_name", "") ?: "")
     }
 
-    val isConnected = autoDetectedBrand != "None"
+    val isConnected = autoDetectedBrand != "None" && autoDetectedBrand != "Unknown"
     val displayStatus = if (!isConnected) {
         "Not Connected"
     } else {
@@ -136,6 +139,10 @@ fun KSRAMBeepScreen() {
                 icon = if (isConnected) Icons.Rounded.CheckCircle else Icons.AutoMirrored.Rounded.DirectionsBike,
                 isActive = isConnected
             )
+
+            if (isConnected && detectedSourceName.isNotEmpty()) {
+                MiniInfoCard(title = "Detected Source", value = detectedSourceName)
+            }
 
             Text(
                 text = "Settings",

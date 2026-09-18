@@ -48,19 +48,24 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         val shiftingDevices = lastSavedDevices.filter { it.enabled && it.supportedDataTypes.contains(DataType.Type.SHIFTING_GEARS) }
         val sharedPreferences = getSharedPreferences("ksram_beep_prefs", Context.MODE_PRIVATE)
 
-        // If we have a known active source, use that specifically
         val activeDevice = shiftingDevices.find { it.id == lastSourceId }
-        val primaryDevice = activeDevice ?: shiftingDevices.firstOrNull()
+        
+        // Prioritize hardware over extensions if we don't have a confirmed active source yet
+        val hardwareDevices = shiftingDevices.filter { it.connectionType != "EXTENSION" }
+        val primaryDevice = activeDevice ?: hardwareDevices.firstOrNull() ?: shiftingDevices.firstOrNull()
 
         if (primaryDevice == null) {
             if (autoDetectedBrand != "None") {
                 autoDetectedBrand = "None"
-                sharedPreferences.edit().putString("detected_brand", "None").apply()
+                sharedPreferences.edit()
+                    .putString("detected_brand", "None")
+                    .putString("detected_source_name", "")
+                    .apply()
             }
             return
         }
         
-        // Update max gears from device info as fallback
+        // Update max gears
         primaryDevice.gearInfo?.let { info ->
             if (lastFrontMax == -1 && info.maxFrontGears > 0) lastFrontMax = info.maxFrontGears
             if (lastRearMax == -1 && info.maxRearGears > 0) lastRearMax = info.maxRearGears
@@ -68,40 +73,53 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
 
         var detected = "Unknown"
         
-        // Check names/manufacturers for brand
-        val devicesToCheck = if (activeDevice != null) listOf(activeDevice) else shiftingDevices
-        
-        for (device in devicesToCheck) {
+        // BRAND DETECTION LOGIC
+        // 1. Check for SRAM keywords
+        val isSram = { device: SavedDevices.SavedDevice ->
             val name = device.name.lowercase()
             val manufacturer = device.details.manufacturer?.lowercase() ?: ""
-            val componentManufacturers = device.components?.values?.mapNotNull { it.manufacturer?.lowercase() } ?: emptyList()
-            
-            val isSram = name.contains("sram") || name.contains("axs") || name.contains("etap") || 
-                         manufacturer.contains("sram") || componentManufacturers.any { it.contains("sram") }
-            
-            val isShimano = name.contains("shimano") || name.contains("di2") || 
-                            manufacturer.contains("shimano") ||
-                            componentManufacturers.any { it.contains("shimano") }
+            val components = device.components?.values?.mapNotNull { it.manufacturer?.lowercase() } ?: emptyList()
+            name.contains("sram") || name.contains("axs") || name.contains("etap") || 
+            manufacturer.contains("sram") || components.any { it.contains("sram") }
+        }
 
-            if (isSram) {
-                detected = "SRAM"
-                break
-            } else if (isShimano) {
-                detected = "Shimano"
-                break
-            }
+        // 2. Check for Shimano keywords (excluding 'ki2' as it's a virtual bridge)
+        val isShimano = { device: SavedDevices.SavedDevice ->
+            val name = device.name.lowercase()
+            val manufacturer = device.details.manufacturer?.lowercase() ?: ""
+            val components = device.components?.values?.mapNotNull { it.manufacturer?.lowercase() } ?: emptyList()
+            (name.contains("shimano") || name.contains("di2")) || 
+            (manufacturer.contains("shimano") && !name.contains("ki2")) || 
+            components.any { it.contains("shimano") }
+        }
+
+        // Apply detection with priority: Active Device > Any Hardware > Any Shifter
+        if (activeDevice != null) {
+            if (isSram(activeDevice)) detected = "SRAM"
+            else if (isShimano(activeDevice)) detected = "Shimano"
         }
         
-        // Fallback for 2x systems
         if (detected == "Unknown") {
-            val is2x = primaryDevice.gearInfo?.maxFrontGears == 2
-            if (is2x) detected = "SRAM"
+            val sramHardware = hardwareDevices.find { isSram(it) }
+            if (sramHardware != null) detected = "SRAM"
+            else {
+                val shimanoHardware = hardwareDevices.find { isShimano(it) }
+                if (shimanoHardware != null) detected = "Shimano"
+            }
+        }
+
+        // Fallback for 2x systems (highly likely SRAM AXS if not identified as Shimano)
+        if (detected == "Unknown" && primaryDevice.gearInfo?.maxFrontGears == 2) {
+            detected = "SRAM"
         }
 
         if (detected != autoDetectedBrand) {
             autoDetectedBrand = detected
-            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Auto-detected brand: $autoDetectedBrand (Source: ${primaryDevice.name})")
-            sharedPreferences.edit().putString("detected_brand", detected).apply()
+            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Auto-detected brand: $detected (Source: ${primaryDevice.name})")
+            sharedPreferences.edit()
+                .putString("detected_brand", detected)
+                .putString("detected_source_name", primaryDevice.name)
+                .apply()
         }
     }
 
