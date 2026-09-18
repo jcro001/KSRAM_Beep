@@ -19,6 +19,8 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
     private var lastRearGearIndex: Int = -1
     private var lastFrontMax: Int = -1
     private var lastRearMax: Int = -1
+    private var lastSavedDevices: List<SavedDevices.SavedDevice> = emptyList()
+    private var lastSourceId: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -36,16 +38,21 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         deviceConsumerId?.let { karooSystem.removeConsumer(it) }
         deviceConsumerId = karooSystem.addConsumer<SavedDevices>(
             onEvent = { event ->
-                detectDrivetrainBrand(event.devices)
+                lastSavedDevices = event.devices
+                detectDrivetrainBrand()
             }
         )
     }
 
-    private fun detectDrivetrainBrand(devices: List<SavedDevices.SavedDevice>) {
-        val shiftingDevices = devices.filter { it.enabled && it.connected }
+    private fun detectDrivetrainBrand() {
+        val shiftingDevices = lastSavedDevices.filter { it.enabled && it.supportedDataTypes.contains(DataType.Type.SHIFTING_GEARS) }
         val sharedPreferences = getSharedPreferences("ksram_beep_prefs", Context.MODE_PRIVATE)
 
-        if (shiftingDevices.isEmpty()) {
+        // If we have a known active source, use that specifically
+        val activeDevice = shiftingDevices.find { it.id == lastSourceId }
+        val primaryDevice = activeDevice ?: shiftingDevices.firstOrNull()
+
+        if (primaryDevice == null) {
             if (autoDetectedBrand != "None") {
                 autoDetectedBrand = "None"
                 sharedPreferences.edit().putString("detected_brand", "None").apply()
@@ -54,13 +61,17 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         }
         
         // Update max gears from device info as fallback
-        shiftingDevices.firstOrNull { it.gearInfo != null }?.gearInfo?.let { info ->
+        primaryDevice.gearInfo?.let { info ->
             if (lastFrontMax == -1 && info.maxFrontGears > 0) lastFrontMax = info.maxFrontGears
             if (lastRearMax == -1 && info.maxRearGears > 0) lastRearMax = info.maxRearGears
         }
 
         var detected = "Unknown"
-        for (device in shiftingDevices) {
+        
+        // Check names/manufacturers for brand
+        val devicesToCheck = if (activeDevice != null) listOf(activeDevice) else shiftingDevices
+        
+        for (device in devicesToCheck) {
             val name = device.name.lowercase()
             val manufacturer = device.details.manufacturer?.lowercase() ?: ""
             val componentManufacturers = device.components?.values?.mapNotNull { it.manufacturer?.lowercase() } ?: emptyList()
@@ -68,8 +79,8 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
             val isSram = name.contains("sram") || name.contains("axs") || name.contains("etap") || 
                          manufacturer.contains("sram") || componentManufacturers.any { it.contains("sram") }
             
-            val isShimano = name.contains("shimano") || name.contains("di2") || name.contains("ki2") || 
-                            device.connectionType == "EXTENSION" || manufacturer.contains("shimano") ||
+            val isShimano = name.contains("shimano") || name.contains("di2") || 
+                            manufacturer.contains("shimano") ||
                             componentManufacturers.any { it.contains("shimano") }
 
             if (isSram) {
@@ -81,16 +92,15 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
             }
         }
         
-        // Fallback: If it's a 2x system and not explicitly Shimano, assume SRAM for protection logic
+        // Fallback for 2x systems
         if (detected == "Unknown") {
-            val is2x = shiftingDevices.any { it.gearInfo?.maxFrontGears == 2 }
+            val is2x = primaryDevice.gearInfo?.maxFrontGears == 2
             if (is2x) detected = "SRAM"
         }
 
         if (detected != autoDetectedBrand) {
             autoDetectedBrand = detected
-            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Auto-detected brand: $autoDetectedBrand")
-            // Store it so MainActivity can show it
+            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Auto-detected brand: $autoDetectedBrand (Source: ${primaryDevice.name})")
             sharedPreferences.edit().putString("detected_brand", detected).apply()
         }
     }
@@ -106,13 +116,17 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
             onEvent = { event ->
                 val state = event.state
                 if (state is StreamState.Streaming) {
-                    handleGearUpdate(state.dataPoint.values)
+                    handleGearUpdate(state.dataPoint.values, state.dataPoint.sourceId)
                 }
             }
         )
     }
 
-    private fun handleGearUpdate(values: Map<String, Double>) {
+    private fun handleGearUpdate(values: Map<String, Double>, sourceId: String?) {
+        if (sourceId != null && sourceId != lastSourceId) {
+            lastSourceId = sourceId
+            detectDrivetrainBrand()
+        }
         val sharedPreferences = getSharedPreferences("ksram_beep_prefs", Context.MODE_PRIVATE)
         val lowGearAlertEnabled = sharedPreferences.getBoolean("low_gear_alert_enabled", true)
         val highGearAlertEnabled = sharedPreferences.getBoolean("high_gear_alert_enabled", true)
