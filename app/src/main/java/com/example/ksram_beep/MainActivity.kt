@@ -94,7 +94,15 @@ fun KSRAMBeepScreen() {
         mutableStateOf(sharedPreferences.getString("pref_drivetrain_brand", "Auto") ?: "Auto")
     }
     var autoDetectedBrand by remember {
-        mutableStateOf(sharedPreferences.getString("detected_brand", "Unknown"))
+        mutableStateOf(sharedPreferences.getString("detected_brand", "None"))
+    }
+
+    val isConnected = autoDetectedBrand != "None"
+    val displayStatus = if (!isConnected) {
+        "Not Connected"
+    } else {
+        val brand = if (drivetrainBrand == "Auto") autoDetectedBrand else drivetrainBrand
+        "Connected ($brand)"
     }
 
     Scaffold(
@@ -123,10 +131,10 @@ fun KSRAMBeepScreen() {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             StatusCard(
-                title = "Status",
-                status = if (drivetrainBrand == "Auto") "Auto ($autoDetectedBrand)" else "Active ($drivetrainBrand)",
-                icon = Icons.Rounded.CheckCircle,
-                isActive = true
+                title = "Drivetrain Status",
+                status = displayStatus,
+                icon = if (isConnected) Icons.Rounded.CheckCircle else Icons.AutoMirrored.Rounded.DirectionsBike,
+                isActive = isConnected
             )
 
             Text(

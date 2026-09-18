@@ -43,19 +43,23 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
 
     private fun detectDrivetrainBrand(devices: List<SavedDevices.SavedDevice>) {
         val shiftingDevices = devices.filter { it.enabled }
-        if (shiftingDevices.isEmpty()) return
-
         val sharedPreferences = getSharedPreferences("ksram_beep_prefs", Context.MODE_PRIVATE)
-        val currentBrand = sharedPreferences.getString("pref_drivetrain_brand", "Auto") ?: "Auto"
+
+        if (shiftingDevices.isEmpty()) {
+            if (autoDetectedBrand != "None") {
+                autoDetectedBrand = "None"
+                sharedPreferences.edit().putString("detected_brand", "None").apply()
+            }
+            return
+        }
         
         // Update max gears from device info as fallback
         shiftingDevices.firstOrNull { it.gearInfo != null }?.gearInfo?.let { info ->
             if (lastFrontMax == -1 && info.maxFrontGears > 0) lastFrontMax = info.maxFrontGears
             if (lastRearMax == -1 && info.maxRearGears > 0) lastRearMax = info.maxRearGears
-            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Updated max gears from SavedDevices: F=${info.maxFrontGears}, R=${info.maxRearGears}")
         }
 
-        var detected = "Auto"
+        var detected = "Unknown"
         for (device in shiftingDevices) {
             val name = device.name.lowercase()
             val manufacturer = device.details.manufacturer?.lowercase() ?: ""
@@ -78,12 +82,12 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         }
         
         // Fallback: If it's a 2x system and not explicitly Shimano, assume SRAM for protection logic
-        if (detected == "Auto") {
+        if (detected == "Unknown") {
             val is2x = shiftingDevices.any { it.gearInfo?.maxFrontGears == 2 }
             if (is2x) detected = "SRAM"
         }
 
-        if (detected != "Auto" && detected != autoDetectedBrand) {
+        if (detected != autoDetectedBrand) {
             autoDetectedBrand = detected
             if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Auto-detected brand: $autoDetectedBrand")
             // Store it so MainActivity can show it
