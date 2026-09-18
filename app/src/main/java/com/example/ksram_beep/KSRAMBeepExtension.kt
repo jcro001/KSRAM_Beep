@@ -42,7 +42,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
     }
 
     private fun detectDrivetrainBrand(devices: List<SavedDevices.SavedDevice>) {
-        val shiftingDevices = devices.filter { it.enabled }
+        val shiftingDevices = devices.filter { it.enabled && it.connected }
         val sharedPreferences = getSharedPreferences("ksram_beep_prefs", Context.MODE_PRIVATE)
 
         if (shiftingDevices.isEmpty()) {
