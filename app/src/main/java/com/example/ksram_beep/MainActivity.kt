@@ -84,6 +84,9 @@ fun KSRAMBeepScreen() {
     var cassetteSize by remember {
         mutableIntStateOf(sharedPreferences.getInt("pref_cassette_size", 0))
     }
+    var minBeepRetryDelay by remember {
+        mutableIntStateOf(sharedPreferences.getInt("pref_min_beep_retry_delay", 5))
+    }
     var drivetrainBrand by remember {
         mutableStateOf(sharedPreferences.getString("pref_drivetrain_brand", "Auto") ?: "Auto")
     }
@@ -125,6 +128,9 @@ fun KSRAMBeepScreen() {
                 }
                 "pref_cassette_size" -> {
                     cassetteSize = prefs.getInt(key, 0)
+                }
+                "pref_min_beep_retry_delay" -> {
+                    minBeepRetryDelay = prefs.getInt(key, 5)
                 }
                 "low_gear_alert_enabled" -> {
                     lowGearAlertEnabled = prefs.getBoolean(key, true)
@@ -226,6 +232,17 @@ fun KSRAMBeepScreen() {
                 onOptionSelected = { size ->
                     cassetteSize = size
                     sharedPreferences.edit().putInt("pref_cassette_size", size).apply()
+                }
+            )
+
+            DropdownSettingCard(
+                title = "Limit Retry Delay",
+                icon = Icons.Rounded.Settings,
+                selectedValue = "${minBeepRetryDelay}s",
+                options = listOf(1 to "1s", 5 to "5s", 10 to "10s", 15 to "15s", 30 to "30s"),
+                onOptionSelected = { delay ->
+                    minBeepRetryDelay = delay
+                    sharedPreferences.edit().putInt("pref_min_beep_retry_delay", delay).apply()
                 }
             )
 

@@ -37,11 +37,13 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
     private var lastSavedDevices: List<SavedDevices.SavedDevice> = emptyList()
     private var lastSourceId: String? = null
     private var lastFrontShiftTimestamp: Long = 0
+    private var lastBeepTimestamp: Long = 0
 
     // Cached SharedPreferences values
     private var lowGearAlertEnabled = true
     private var highGearAlertEnabled = true
     private var manualCassetteSize = 0
+    private var minBeepRetryDelay = 5
     private var drivetrainBrandPref = DrivetrainBrand.AUTO
     
     @Volatile
@@ -53,6 +55,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
             KEY_LOW_GEAR_ALERT -> lowGearAlertEnabled = prefs.getBoolean(KEY_LOW_GEAR_ALERT, true)
             KEY_HIGH_GEAR_ALERT -> highGearAlertEnabled = prefs.getBoolean(KEY_HIGH_GEAR_ALERT, true)
             KEY_CASSETTE_SIZE -> manualCassetteSize = prefs.getInt(KEY_CASSETTE_SIZE, 0)
+            KEY_MIN_BEEP_RETRY_DELAY -> minBeepRetryDelay = prefs.getInt(KEY_MIN_BEEP_RETRY_DELAY, 5)
             KEY_DRIVETRAIN_BRAND_PREF -> drivetrainBrandPref = DrivetrainBrand.fromString(prefs.getString(KEY_DRIVETRAIN_BRAND_PREF, DrivetrainBrand.AUTO.nameStr))
             KEY_DETECTED_BRAND -> autoDetectedBrand = DrivetrainBrand.fromString(prefs.getString(KEY_DETECTED_BRAND, DrivetrainBrand.NONE.nameStr))
             KEY_DETECTED_SOURCE_NAME -> detectedSourceName = prefs.getString(KEY_DETECTED_SOURCE_NAME, "") ?: ""
@@ -65,6 +68,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         lowGearAlertEnabled = sharedPreferences.getBoolean(KEY_LOW_GEAR_ALERT, true)
         highGearAlertEnabled = sharedPreferences.getBoolean(KEY_HIGH_GEAR_ALERT, true)
         manualCassetteSize = sharedPreferences.getInt(KEY_CASSETTE_SIZE, 0)
+        minBeepRetryDelay = sharedPreferences.getInt(KEY_MIN_BEEP_RETRY_DELAY, 5)
         drivetrainBrandPref = DrivetrainBrand.fromString(sharedPreferences.getString(KEY_DRIVETRAIN_BRAND_PREF, DrivetrainBrand.AUTO.nameStr))
         autoDetectedBrand = DrivetrainBrand.fromString(sharedPreferences.getString(KEY_DETECTED_BRAND, DrivetrainBrand.NONE.nameStr))
         detectedSourceName = sharedPreferences.getString(KEY_DETECTED_SOURCE_NAME, "") ?: ""
@@ -261,29 +265,37 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         }
 
         val isSram = drivetrainBrand == DrivetrainBrand.SRAM
+        val isLowLimit = rearGear == 1
+        
+        // SRAM AXS software block: beeps at 1/(Max-1).
+        // Shimano: beeps only at 1/Max.
+        val isSramHighLimit = isSram && frontMax > 1 && frontGear == 1 && (
+            (baseMax == 12 && rearGear == 11) || (baseMax == 11 && rearGear == 10)
+        )
+        
+        val isStandardHighLimit = (baseMax > 0 && rearGear == baseMax)
+        val isHighLimit = isSramHighLimit || isStandardHighLimit
 
-        if (rearChanged) {
+        if (rearChanged || isLowLimit || isHighLimit) {
             val isCompensationShift = frontChanged || (now - lastFrontShiftTimestamp < COMPENSATION_SHIFT_WINDOW_MS)
             if (isCompensationShift) {
                 if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Muting beep for compensation shift")
             } else if (brandSwitchedThisUpdate) {
                 if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Muting beep due to brand switch correction")
             } else {
-                val isLowLimit = rearGear == 1
+                val timeSinceLastBeep = now - lastBeepTimestamp
+                val retryDelayMs = minBeepRetryDelay * 1000L
                 
-                // SRAM AXS software block: beeps at 1/(Max-1).
-                // Shimano: beeps only at 1/Max.
-                val isSramHighLimit = isSram && frontMax > 1 && frontGear == 1 && (
-                    (baseMax == 12 && rearGear == 11) || (baseMax == 11 && rearGear == 10)
-                )
-                
-                val isStandardHighLimit = (baseMax > 0 && rearGear == baseMax)
-                val isHighLimit = isSramHighLimit || isStandardHighLimit
-                
-                if (isLowLimit) {
-                    if (lowGearAlertEnabled) playBeep(LOW_LIMIT_BEEP_FREQUENCY_HZ)
-                } else if (isHighLimit) {
-                    if (highGearAlertEnabled) playBeep(HIGH_LIMIT_BEEP_FREQUENCY_HZ)
+                // Beep if it's a new gear shift to a limit, 
+                // OR if we are already at a limit and the user shifted again (detected via event) after the delay.
+                if (rearChanged || timeSinceLastBeep >= retryDelayMs) {
+                    if (isLowLimit && lowGearAlertEnabled) {
+                        playBeep(LOW_LIMIT_BEEP_FREQUENCY_HZ)
+                        lastBeepTimestamp = now
+                    } else if (isHighLimit && highGearAlertEnabled) {
+                        playBeep(HIGH_LIMIT_BEEP_FREQUENCY_HZ)
+                        lastBeepTimestamp = now
+                    }
                 }
             }
         }
@@ -313,6 +325,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         private const val KEY_LOW_GEAR_ALERT = "low_gear_alert_enabled"
         private const val KEY_HIGH_GEAR_ALERT = "high_gear_alert_enabled"
         private const val KEY_CASSETTE_SIZE = "pref_cassette_size"
+        private const val KEY_MIN_BEEP_RETRY_DELAY = "pref_min_beep_retry_delay"
 
         private const val COMPENSATION_SHIFT_WINDOW_MS = 1000L
         private const val LOW_LIMIT_BEEP_FREQUENCY_HZ = 3000
