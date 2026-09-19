@@ -1,11 +1,12 @@
 package com.example.ksram_beep
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,15 +17,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.DirectionsBike
-import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -35,18 +32,15 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -57,12 +51,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ksram_beep.ui.theme.KSRAM_BeepTheme
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -98,6 +92,55 @@ fun KSRAMBeepScreen() {
     }
     var detectedSourceName by remember {
         mutableStateOf(sharedPreferences.getString("detected_source_name", "") ?: "")
+    }
+
+    LaunchedEffect(Unit) {
+        if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "MainActivity UI started. Initial brand: $autoDetectedBrand")
+        while (true) {
+            delay(2000)
+            val prefBrand = sharedPreferences.getString("detected_brand", "None") ?: "None"
+            val prefSource = sharedPreferences.getString("detected_source_name", "") ?: ""
+            if (prefBrand != autoDetectedBrand) {
+                if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "UI Polling: Brand changed $autoDetectedBrand -> $prefBrand")
+                autoDetectedBrand = prefBrand
+            }
+            if (prefSource != detectedSourceName) {
+                detectedSourceName = prefSource
+            }
+        }
+    }
+
+    val listener = remember {
+        SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Pref change detected: $key")
+            when (key) {
+                "detected_brand" -> {
+                    autoDetectedBrand = prefs.getString(key, "None") ?: "None"
+                }
+                "detected_source_name" -> {
+                    detectedSourceName = prefs.getString(key, "") ?: ""
+                }
+                "pref_drivetrain_brand" -> {
+                    drivetrainBrand = prefs.getString(key, "Auto") ?: "Auto"
+                }
+                "pref_cassette_size" -> {
+                    cassetteSize = prefs.getInt(key, 0)
+                }
+                "low_gear_alert_enabled" -> {
+                    lowGearAlertEnabled = prefs.getBoolean(key, true)
+                }
+                "high_gear_alert_enabled" -> {
+                    highGearAlertEnabled = prefs.getBoolean(key, true)
+                }
+            }
+        }
+    }
+
+    DisposableEffect(sharedPreferences) {
+        sharedPreferences.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            sharedPreferences.unregisterOnSharedPreferenceChangeListener(listener)
+        }
     }
 
     val isConnected = autoDetectedBrand != "None" && autoDetectedBrand != "Unknown"
