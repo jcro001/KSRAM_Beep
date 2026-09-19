@@ -1,26 +1,23 @@
 # KogSense
 
-**KogSense** is a specialized Android extension for the Hammerhead Karoo cycling computer. It provides audible feedback when your electronic drivetrain reaches its mechanical limits (the first or last cog), allowing you to focus on the road instead of your gear display.
+**KogSense** is an extension for the Hammerhead Karoo that beeps when your electronic drivetrain hits its mechanical limits. It automatically supports both **SRAM AXS** and **Shimano Di2** (Note: Di2 support requires the [Ki2 extension](https://github.com/valterc/ki2) to be installed).
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/jcro001)
 
 ## Features
 
-- **End-of-Cassette Alerts**: Automatic beeps when you reach the highest or lowest gear.
-- **SRAM & Shimano Support**: Specialized logic for both brands, including:
-  - **SRAM Road 2x**: Correctly handles soft-lockouts (e.g., beeping at gear 11 when in the small ring).
-  - **Shimano Di2**: Full range support and detection of manual-mode blocks.
-- **Proactive & Reactive Alerts**: 
-  - **Proactive**: Beeps the moment you shift *into* the limit gear.
-  - **Reactive**: Reminder beep if you attempt to shift again while already at the limit.
-- **Context-Aware Muting**: Automatically suppresses beeps during front shifts (compensation shifts) to prevent audio clutter.
-- **Thread-Safe Logic**: Built for reliability on the Karoo platform with multi-threaded event processing.
+- **End-of-Range Alerts**: Automatic beeps when you reach the first or last available gear in your cassette.
+- **Cross-Chain Blocked Gear Support**: Correctly handles systems that block certain gear combinations to prevent chain rasp. For example, on SRAM 2x systems where the small-small combination is permanently locked out, KogSense identifies the actual reachable gear as the limit and beeps accordingly.
+- **Proactive Alerts**: Beeps the moment you shift into your limit gear, so you know instantly when you're out of shifts.
+- **Reminder Alerts**: Provides a secondary beep if you attempt to shift again while already at the limit.
+- **Tested & Verified**: Fully tested and verified on **SRAM AXS 2x12** and **Shimano Di2 2x12** drivetrains.
+- **Smart Detection**: Automatically detects your drivetrain brand and configuration to adjust beeping logic without manual setup.
 
 ## Installation
 
-1. Download the latest APK from the [Releases](https://github.com/jcro001/KogSense/releases) page.
-2. Sideload the APK onto your Hammerhead Karoo.
-3. Open the **KogSense** app on your Karoo to configure your preferences.
+1. Download the latest release from the [Releases](https://github.com/jcro001/KogSense/releases) page.
+2. Sideload the file onto your Hammerhead Karoo.
+3. Open the **KogSense** app on your Karoo to configure your alerts.
 4. Ensure the extension is enabled in your Karoo settings.
 
 ## Configuration
@@ -28,16 +25,8 @@
 Within the KogSense app, you can adjust:
 - **Alert Toggles**: Enable or disable Low Gear and High Gear alerts independently.
 - **Cassette Size**: Manually set your cassette size (10S-13S) or let the app detect it automatically.
-- **Min Retry Delay**: Adjust how long to wait before repeating a "reminder" beep if you keep clicking the shifter.
-- **Drivetrain Mode**: Force SRAM/Shimano modes or use "Auto" detection.
-
-## Development
-
-This project uses the [Hammerhead Karoo Extension SDK](https://github.com/hammerheadnav/karoo-ext).
-
-### Prerequisites
-- Android Studio
-- Hammerhead Karoo SDK v1.1.9+
+- **Min Retry Delay**: Adjust the delay between "reminder" beeps if you continue clicking the shifter at a limit.
+- **Drivetrain Mode**: Force SRAM/Shimano modes or use the "Auto" detection.
 
 ## Support
 
