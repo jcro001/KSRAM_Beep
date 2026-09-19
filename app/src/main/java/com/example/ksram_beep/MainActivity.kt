@@ -99,18 +99,6 @@ fun KSRAMBeepScreen() {
 
     LaunchedEffect(Unit) {
         if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "MainActivity UI started. Initial brand: $autoDetectedBrand")
-        while (true) {
-            delay(2000)
-            val prefBrand = sharedPreferences.getString("detected_brand", "None") ?: "None"
-            val prefSource = sharedPreferences.getString("detected_source_name", "") ?: ""
-            if (prefBrand != autoDetectedBrand) {
-                if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "UI Polling: Brand changed $autoDetectedBrand -> $prefBrand")
-                autoDetectedBrand = prefBrand
-            }
-            if (prefSource != detectedSourceName) {
-                detectedSourceName = prefSource
-            }
-        }
     }
 
     val listener = remember {

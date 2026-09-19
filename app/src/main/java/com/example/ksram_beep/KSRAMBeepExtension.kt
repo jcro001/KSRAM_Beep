@@ -27,30 +27,32 @@ enum class DrivetrainBrand(val nameStr: String) {
 
 class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
     private lateinit var karooSystem: KarooSystemService
+    private val stateLock = Any()
+
     private var gearConsumerId: String? = null
     private var rearCountConsumerId: String? = null
     private var deviceConsumerId: String? = null
 
-    private var lastFrontGearIndex: Int = -1
-    private var lastRearGearIndex: Int = -1
-    private var lastRearCount: Int = -1
-    private var lastFrontMax: Int = -1
-    private var lastRearMax: Int = -1
-    private var lastSavedDevices: List<SavedDevices.SavedDevice> = emptyList()
-    private var lastSourceId: String? = null
-    private var lastFrontShiftTimestamp: Long = 0
-    private var lastBeepTimestamp: Long = 0
+    @Volatile private var lastFrontGearIndex: Int = -1
+    @Volatile private var lastRearGearIndex: Int = -1
+    @Volatile private var lastRearCount: Int = -1
+    @Volatile private var lastFrontMax: Int = -1
+    @Volatile private var lastRearMax: Int = -1
+    @Volatile private var lastSavedDevices: List<SavedDevices.SavedDevice> = emptyList()
+    @Volatile private var lastSourceId: String? = null
+    @Volatile private var lastFrontShiftTimestamp: Long = 0
+    @Volatile private var lastBeepTimestamp: Long = 0
 
     // Cached SharedPreferences values
-    private var lowGearAlertEnabled = true
-    private var highGearAlertEnabled = true
-    private var manualCassetteSize = 0
-    private var minBeepRetryDelay = 5
-    private var drivetrainBrandPref = DrivetrainBrand.AUTO
+    @Volatile private var lowGearAlertEnabled = true
+    @Volatile private var highGearAlertEnabled = true
+    @Volatile private var manualCassetteSize = 0
+    @Volatile private var minBeepRetryDelay = 5
+    @Volatile private var drivetrainBrandPref = DrivetrainBrand.AUTO
     
     @Volatile
     private var autoDetectedBrand = DrivetrainBrand.NONE
-    private var detectedSourceName = ""
+    @Volatile private var detectedSourceName = ""
 
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
         when (key) {
@@ -93,13 +95,19 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         deviceConsumerId = karooSystem.addConsumer<SavedDevices>(
             onEvent = { event ->
                 if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Received SavedDevices event: ${event.devices.size} devices")
-                lastSavedDevices = event.devices
-                detectDrivetrainBrand()
+                synchronized(stateLock) {
+                    lastSavedDevices = event.devices
+                    detectDrivetrainBrandLocked()
+                }
             }
         )
     }
 
-    private fun detectDrivetrainBrand() {
+    private fun detectDrivetrainBrand() = synchronized(stateLock) {
+        detectDrivetrainBrandLocked()
+    }
+
+    private fun detectDrivetrainBrandLocked() {
         val shiftingDevices = lastSavedDevices.filter { device ->
             device.enabled && (
                 device.supportedDataTypes.contains(DataType.Type.SHIFTING_GEARS) ||
@@ -158,10 +166,19 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
                 manufacturer.contains("shimano") || id.contains("ki2") || id.contains("shimano")
             }
 
-            if (isSram(primaryDevice)) detected = DrivetrainBrand.SRAM
-            else if (isShimano(primaryDevice)) detected = DrivetrainBrand.SHIMANO
+            if (isSram(primaryDevice)) {
+                detected = DrivetrainBrand.SRAM
+                // Default defaults for SRAM (most common AXS is 12s/2x)
+                if (lastRearMax <= 0) lastRearMax = 12
+                if (lastFrontMax <= 0) lastFrontMax = 2
+            } else if (isShimano(primaryDevice)) {
+                detected = DrivetrainBrand.SHIMANO
+                // Default defaults for Shimano (most common Di2 is 12s/2x)
+                if (lastRearMax <= 0) lastRearMax = 12
+                if (lastFrontMax <= 0) lastFrontMax = 2
+            }
 
-            // Update max gears from device info if available
+            // Update max gears from device info if available (overwrites defaults)
             primaryDevice.gearInfo?.let { info ->
                 if (info.maxFrontGears > 0) lastFrontMax = info.maxFrontGears
                 if (info.maxRearGears > 0) lastRearMax = info.maxRearGears
@@ -206,7 +223,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
             onEvent = { event ->
                 val state = event.state
                 if (state is StreamState.Streaming) {
-                    handleGearUpdate(state.dataPoint.values, state.dataPoint.sourceId)
+                    handleGearUpdate(state.dataPoint.dataTypeId, state.dataPoint.values, state.dataPoint.sourceId)
                 }
             }
         )
@@ -216,109 +233,123 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
             onEvent = { event ->
                 val state = event.state
                 if (state is StreamState.Streaming) {
-                    handleGearUpdate(state.dataPoint.values, state.dataPoint.sourceId)
+                    handleGearUpdate(state.dataPoint.dataTypeId, state.dataPoint.values, state.dataPoint.sourceId)
                 }
             }
         )
     }
 
-    private fun handleGearUpdate(values: Map<String, Double>, sourceId: String?) {
-        if (sourceId != null && sourceId != lastSourceId) {
-            lastSourceId = sourceId
-            detectDrivetrainBrand()
-        }
-
-        var drivetrainBrand = if (drivetrainBrandPref == DrivetrainBrand.AUTO) autoDetectedBrand else drivetrainBrandPref
-
-        val frontGear = values[DataType.Field.SHIFTING_FRONT_GEAR]?.toInt() ?: lastFrontGearIndex
-        val frontMax = values[DataType.Field.SHIFTING_FRONT_GEAR_MAX]?.toInt()?.also { lastFrontMax = it } ?: lastFrontMax
-        val rearGear = values[DataType.Field.SHIFTING_REAR_GEAR]?.toInt() ?: lastRearGearIndex
-        val sdkRearMax = values[DataType.Field.SHIFTING_REAR_GEAR_MAX]?.toInt()?.also { lastRearMax = it } ?: lastRearMax
-        val rearCount = values[DataType.Field.SHIFTING_COUNT]?.toInt() ?: lastRearCount
-
-        val now = System.currentTimeMillis()
-        val frontChanged = frontGear != lastFrontGearIndex && lastFrontGearIndex != -1
-        if (frontChanged) {
-            lastFrontShiftTimestamp = now
-        }
-        lastFrontGearIndex = frontGear
-
-        val baseMax = if (manualCassetteSize > 0) manualCassetteSize else sdkRearMax
-        if (rearGear <= 0) return
-
-        // BEHAVIORAL DETECTION:
-        // Notice which system it is based on gear behavior.
-        // 1. If we reach a gear that is blocked on SRAM AXS 2x (e.g. 1/12), we are Shimano.
-        val blockedGear = when (baseMax) {
-            12 -> 11
-            11 -> 10
-            else -> -1
-        }
+    private fun handleGearUpdate(dataTypeId: String, values: Map<String, Double>, sourceId: String?) {
+        var beepFreq: Int? = null
         
-        var brandSwitchedThisUpdate = false
-        // Only trigger behavioral detection if we have enough info and are in Auto mode
-        val definitelyNotSramBlocked = baseMax > 0 && frontMax > 1 && frontGear == 1 && 
-                                      blockedGear > 0 && rearGear > blockedGear
-        
-        if (definitelyNotSramBlocked && autoDetectedBrand != DrivetrainBrand.SHIMANO && drivetrainBrandPref == DrivetrainBrand.AUTO) {
-            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Behavioral Detection: Reached gear $rearGear in small ring. Identifying as Shimano.")
-            autoDetectedBrand = DrivetrainBrand.SHIMANO
-            drivetrainBrand = DrivetrainBrand.SHIMANO
-            val activeDeviceName = lastSavedDevices.find { it.id == lastSourceId }?.name ?: detectedSourceName
-            detectedSourceName = activeDeviceName
-            val sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            sharedPreferences.edit()
-                .putString(KEY_DETECTED_BRAND, DrivetrainBrand.SHIMANO.nameStr)
-                .putString(KEY_DETECTED_SOURCE_NAME, activeDeviceName)
-                .apply()
-            brandSwitchedThisUpdate = true
-        }
-        
-        val rearChanged = rearGear != lastRearGearIndex && lastRearGearIndex != -1
-        val shiftAttempted = rearCount != lastRearCount && lastRearCount != -1
-        lastRearCount = rearCount
+        synchronized(stateLock) {
+            if (sourceId != null && sourceId != lastSourceId) {
+                lastSourceId = sourceId
+                detectDrivetrainBrand()
+            }
 
-        if (BuildConfig.DEBUG && (rearChanged || frontChanged || shiftAttempted)) {
-            Log.d("KSRAMBeep", "Update - F: $frontGear/$frontMax, R: $rearGear, Max: $baseMax, Brand: ${drivetrainBrand.nameStr}, FC: $frontChanged, RC: $rearChanged, SA: $shiftAttempted")
-        }
+            var drivetrainBrand = if (drivetrainBrandPref == DrivetrainBrand.AUTO) autoDetectedBrand else drivetrainBrandPref
 
-        val isSram = drivetrainBrand == DrivetrainBrand.SRAM
-        val isLowLimit = rearGear == 1
-        
-        // SRAM AXS software block: beeps at 1/(Max-1).
-        // Shimano: beeps only at 1/Max.
-        val isSramHighLimit = isSram && frontMax > 1 && frontGear == 1 && (
-            (baseMax == 12 && rearGear == 11) || (baseMax == 11 && rearGear == 10)
-        )
-        
-        val isStandardHighLimit = (baseMax > 0 && rearGear == baseMax)
-        val isHighLimit = isSramHighLimit || isStandardHighLimit
-
-        if (rearChanged || (shiftAttempted && (isLowLimit || isHighLimit))) {
-            val isCompensationShift = frontChanged || (now - lastFrontShiftTimestamp < COMPENSATION_SHIFT_WINDOW_MS)
-            if (isCompensationShift) {
-                if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Muting beep for compensation shift")
-            } else if (brandSwitchedThisUpdate) {
-                if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Muting beep due to brand switch correction")
+            val frontGear = values[DataType.Field.SHIFTING_FRONT_GEAR]?.toInt() ?: lastFrontGearIndex
+            val frontMax = values[DataType.Field.SHIFTING_FRONT_GEAR_MAX]?.toInt()?.also { lastFrontMax = it } ?: lastFrontMax
+            val rearGear = values[DataType.Field.SHIFTING_REAR_GEAR]?.toInt() ?: lastRearGearIndex
+            val sdkRearMax = values[DataType.Field.SHIFTING_REAR_GEAR_MAX]?.toInt()?.also { lastRearMax = it } ?: lastRearMax
+            
+            // Confirmed against SDK: SHIFTING_COUNT_REAR type uses SHIFTING_COUNT field
+            val rearCount = if (dataTypeId == DataType.Type.SHIFTING_COUNT_REAR) {
+                values[DataType.Field.SHIFTING_COUNT]?.toInt() ?: lastRearCount
             } else {
-                val timeSinceLastBeep = now - lastBeepTimestamp
-                val retryDelayMs = minBeepRetryDelay * 1000L
-                
-                // Beep if it's a new gear shift to a limit, 
-                // OR if we are already at a limit and the user shifted again (detected via shift count) after the delay.
-                if (rearChanged || timeSinceLastBeep >= retryDelayMs) {
-                    if (isLowLimit && lowGearAlertEnabled) {
-                        playBeep(LOW_LIMIT_BEEP_FREQUENCY_HZ)
-                        lastBeepTimestamp = now
-                    } else if (isHighLimit && highGearAlertEnabled) {
-                        playBeep(HIGH_LIMIT_BEEP_FREQUENCY_HZ)
-                        lastBeepTimestamp = now
+                lastRearCount
+            }
+
+            val now = System.currentTimeMillis()
+            val frontChanged = frontGear != lastFrontGearIndex && lastFrontGearIndex != -1
+            if (frontChanged) {
+                lastFrontShiftTimestamp = now
+            }
+            lastFrontGearIndex = frontGear
+
+            val baseMax = if (manualCassetteSize > 0) manualCassetteSize else sdkRearMax
+            if (rearGear <= 0) return
+
+            // BEHAVIORAL DETECTION:
+            // Notice which system it is based on gear behavior.
+            // 1. If we reach a gear that is blocked on SRAM AXS 2x (e.g. 1/12), we are Shimano.
+            val blockedGear = when (baseMax) {
+                12 -> 11
+                11 -> 10
+                else -> -1
+            }
+            
+            var brandSwitchedThisUpdate = false
+            // Only trigger behavioral detection if we have enough info and are in Auto mode
+            val definitelyNotSramBlocked = baseMax > 0 && frontMax > 1 && frontGear == 1 && 
+                                          blockedGear > 0 && rearGear > blockedGear
+            
+            if (definitelyNotSramBlocked && autoDetectedBrand != DrivetrainBrand.SHIMANO && drivetrainBrandPref == DrivetrainBrand.AUTO) {
+                if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Behavioral Detection: Reached gear $rearGear in small ring. Identifying as Shimano.")
+                autoDetectedBrand = DrivetrainBrand.SHIMANO
+                drivetrainBrand = DrivetrainBrand.SHIMANO
+                val activeDeviceName = lastSavedDevices.find { it.id == lastSourceId }?.name ?: detectedSourceName
+                detectedSourceName = activeDeviceName
+                val sharedPreferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                sharedPreferences.edit()
+                    .putString(KEY_DETECTED_BRAND, DrivetrainBrand.SHIMANO.nameStr)
+                    .putString(KEY_DETECTED_SOURCE_NAME, activeDeviceName)
+                    .apply()
+                brandSwitchedThisUpdate = true
+            }
+            
+            val rearChanged = rearGear != lastRearGearIndex && lastRearGearIndex != -1
+            val shiftAttempted = rearCount != lastRearCount && lastRearCount != -1
+            lastRearCount = rearCount
+
+            if (BuildConfig.DEBUG && (rearChanged || frontChanged || shiftAttempted)) {
+                Log.d("KSRAMBeep", "Update - F: $frontGear/$frontMax, R: $rearGear, Max: $baseMax, Brand: ${drivetrainBrand.nameStr}, FC: $frontChanged, RC: $rearChanged, SA: $shiftAttempted")
+            }
+
+            val isSram = drivetrainBrand == DrivetrainBrand.SRAM
+            val isLowLimit = rearGear == 1
+            
+            // Generalized limit logic
+            // SRAM Road 2x: typically blocks baseMax and baseMax - 1 in small ring
+            val sramBlocked = isSram && frontMax > 1 && frontGear == 1 && baseMax > 1
+            val isSramHighLimit = sramBlocked && (rearGear == baseMax - 1)
+            
+            val isStandardHighLimit = (baseMax > 0 && rearGear == baseMax)
+            val isHighLimit = isSramHighLimit || isStandardHighLimit
+
+            if (rearChanged || (shiftAttempted && (isLowLimit || isHighLimit))) {
+                val isCompensationShift = frontChanged || (now - lastFrontShiftTimestamp < COMPENSATION_SHIFT_WINDOW_MS)
+                if (isCompensationShift) {
+                    if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Muting beep for compensation shift")
+                } else if (brandSwitchedThisUpdate) {
+                    if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Muting beep due to brand switch correction")
+                } else {
+                    val timeSinceLastBeep = now - lastBeepTimestamp
+                    val retryDelayMs = minBeepRetryDelay * 1000L
+                    
+                    // Beep if it's a new gear shift to a limit, 
+                    // OR if we are already at a limit and the user shifted again (detected via shift count) after the delay.
+                    if (rearChanged || timeSinceLastBeep >= retryDelayMs) {
+                        if (isLowLimit && lowGearAlertEnabled) {
+                            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Triggering Low Limit Beep. Proactive: $rearChanged")
+                            beepFreq = LOW_LIMIT_BEEP_FREQUENCY_HZ
+                            lastBeepTimestamp = now
+                        } else if (isHighLimit && highGearAlertEnabled) {
+                            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Triggering High Limit Beep. Proactive: $rearChanged")
+                            beepFreq = HIGH_LIMIT_BEEP_FREQUENCY_HZ
+                            lastBeepTimestamp = now
+                        }
                     }
                 }
             }
-        }
 
-        lastRearGearIndex = rearGear
+            lastRearGearIndex = rearGear
+        }
+        
+        // Dispatch IPC call outside the lock to avoid blocking other data stream events
+        beepFreq?.let { playBeep(it) }
     }
 
     private fun playBeep(frequency: Int) {
