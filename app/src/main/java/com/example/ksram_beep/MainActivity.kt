@@ -236,7 +236,7 @@ fun KSRAMBeepScreen() {
             )
 
             DropdownSettingCard(
-                title = "Limit Retry Delay",
+                title = "Min Retry Delay",
                 icon = Icons.Rounded.Settings,
                 selectedValue = "${minBeepRetryDelay}s",
                 options = listOf(1 to "1s", 5 to "5s", 10 to "10s", 15 to "15s", 30 to "30s"),
