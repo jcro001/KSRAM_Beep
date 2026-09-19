@@ -32,6 +32,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
 
     private var lastFrontGearIndex: Int = -1
     private var lastRearGearIndex: Int = -1
+    private var lastRearCount: Int = -1
     private var lastFrontMax: Int = -1
     private var lastRearMax: Int = -1
     private var lastSavedDevices: List<SavedDevices.SavedDevice> = emptyList()
@@ -197,8 +198,25 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
 
     private fun subscribeToGears() {
         gearConsumerId?.let { karooSystem.removeConsumer(it) }
+        
+        val types = listOf(
+            DataType.Type.SHIFTING_GEARS,
+            DataType.Type.SHIFTING_COUNT_REAR
+        )
+
         gearConsumerId = karooSystem.addConsumer<OnStreamState>(
-            params = OnStreamState.StartStreaming(DataType.Type.SHIFTING_GEARS),
+            params = OnStreamState.StartStreaming(types.first()), // Start with gears
+            onEvent = { event ->
+                val state = event.state
+                if (state is StreamState.Streaming) {
+                    handleGearUpdate(state.dataPoint.values, state.dataPoint.sourceId)
+                }
+            }
+        )
+        
+        // Add additional consumer for counts if not in main stream
+        karooSystem.addConsumer<OnStreamState>(
+            params = OnStreamState.StartStreaming(DataType.Type.SHIFTING_COUNT_REAR),
             onEvent = { event ->
                 val state = event.state
                 if (state is StreamState.Streaming) {
@@ -220,6 +238,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         val frontMax = values[DataType.Field.SHIFTING_FRONT_GEAR_MAX]?.toInt()?.also { lastFrontMax = it } ?: lastFrontMax
         val rearGear = values[DataType.Field.SHIFTING_REAR_GEAR]?.toInt() ?: lastRearGearIndex
         val sdkRearMax = values[DataType.Field.SHIFTING_REAR_GEAR_MAX]?.toInt()?.also { lastRearMax = it } ?: lastRearMax
+        val rearCount = values[DataType.Field.SHIFTING_COUNT]?.toInt() ?: lastRearCount
 
         val now = System.currentTimeMillis()
         val frontChanged = frontGear != lastFrontGearIndex && lastFrontGearIndex != -1
@@ -259,9 +278,11 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         }
         
         val rearChanged = rearGear != lastRearGearIndex && lastRearGearIndex != -1
+        val shiftAttempted = rearCount != lastRearCount && lastRearCount != -1
+        lastRearCount = rearCount
 
-        if (BuildConfig.DEBUG) {
-            Log.d("KSRAMBeep", "Update - F: $frontGear/$frontMax, R: $rearGear, Max: $baseMax, Brand: ${drivetrainBrand.nameStr}, FC: $frontChanged, RC: $rearChanged")
+        if (BuildConfig.DEBUG && (rearChanged || frontChanged || shiftAttempted)) {
+            Log.d("KSRAMBeep", "Update - F: $frontGear/$frontMax, R: $rearGear, Max: $baseMax, Brand: ${drivetrainBrand.nameStr}, FC: $frontChanged, RC: $rearChanged, SA: $shiftAttempted")
         }
 
         val isSram = drivetrainBrand == DrivetrainBrand.SRAM
@@ -276,7 +297,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         val isStandardHighLimit = (baseMax > 0 && rearGear == baseMax)
         val isHighLimit = isSramHighLimit || isStandardHighLimit
 
-        if (rearChanged || isLowLimit || isHighLimit) {
+        if (rearChanged || (shiftAttempted && (isLowLimit || isHighLimit))) {
             val isCompensationShift = frontChanged || (now - lastFrontShiftTimestamp < COMPENSATION_SHIFT_WINDOW_MS)
             if (isCompensationShift) {
                 if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Muting beep for compensation shift")
@@ -287,7 +308,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
                 val retryDelayMs = minBeepRetryDelay * 1000L
                 
                 // Beep if it's a new gear shift to a limit, 
-                // OR if we are already at a limit and the user shifted again (detected via event) after the delay.
+                // OR if we are already at a limit and the user shifted again (detected via shift count) after the delay.
                 if (rearChanged || timeSinceLastBeep >= retryDelayMs) {
                     if (isLowLimit && lowGearAlertEnabled) {
                         playBeep(LOW_LIMIT_BEEP_FREQUENCY_HZ)
