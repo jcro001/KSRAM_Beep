@@ -1,4 +1,4 @@
-package com.example.ksram_beep.ui.theme
+package com.kogsense.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

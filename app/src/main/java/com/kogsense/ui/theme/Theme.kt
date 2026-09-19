@@ -1,4 +1,4 @@
-package com.example.ksram_beep.ui.theme
+package com.kogsense.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -31,7 +31,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun KSRAM_BeepTheme(
+fun KogSenseTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit

@@ -40,6 +40,6 @@ dependencyResolutionManagement {
 }
 
 
-rootProject.name = "KSRAM_Beep"
+rootProject.name = "KogSense"
 include(":app")
  

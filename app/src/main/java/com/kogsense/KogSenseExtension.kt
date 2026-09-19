@@ -1,4 +1,4 @@
-package com.example.ksram_beep
+package com.kogsense
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -25,7 +25,7 @@ enum class DrivetrainBrand(val nameStr: String) {
     }
 }
 
-class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
+class KogSenseExtension : KarooExtension("kogsense", "1.0.0") {
     private lateinit var karooSystem: KarooSystemService
     private val stateLock = Any()
 
@@ -68,7 +68,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
 
     override fun onCreate() {
         super.onCreate()
-        val sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val sharedPreferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         lowGearAlertEnabled = sharedPreferences.getBoolean(KEY_LOW_GEAR_ALERT, true)
         highGearAlertEnabled = sharedPreferences.getBoolean(KEY_HIGH_GEAR_ALERT, true)
         manualCassetteSize = sharedPreferences.getInt(KEY_CASSETTE_SIZE, 0)
@@ -82,7 +82,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         karooSystem = KarooSystemService(this)
         karooSystem.connect { connected ->
             if (connected) {
-                if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Connected to Karoo System")
+                if (BuildConfig.DEBUG) Log.d("KogSense", "Connected to Karoo System")
                 subscribeToGears()
                 subscribeToDevices()
             }
@@ -90,11 +90,11 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
     }
 
     private fun subscribeToDevices() {
-        if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Subscribing to devices...")
+        if (BuildConfig.DEBUG) Log.d("KogSense", "Subscribing to devices...")
         deviceConsumerId?.let { karooSystem.removeConsumer(it) }
         deviceConsumerId = karooSystem.addConsumer<SavedDevices>(
             onEvent = { event ->
-                if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Received SavedDevices event: ${event.devices.size} devices")
+                if (BuildConfig.DEBUG) Log.d("KogSense", "Received SavedDevices event: ${event.devices.size} devices")
                 synchronized(stateLock) {
                     lastSavedDevices = event.devices
                     detectDrivetrainBrandLocked()
@@ -115,10 +115,10 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
                 device.supportedDataTypes.contains(DataType.Type.SHIFTING_REAR_GEAR)
             )
         }
-        val sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val sharedPreferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
 
         // Find the active device in all saved devices
-        if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Detecting brand. Active Source ID: $lastSourceId, Total Saved: ${lastSavedDevices.size}")
+        if (BuildConfig.DEBUG) Log.d("KogSense", "Detecting brand. Active Source ID: $lastSourceId, Total Saved: ${lastSavedDevices.size}")
         
         val activeDevice = lastSourceId?.let { id ->
             val match = lastSavedDevices.find { it.id.equals(id, ignoreCase = true) }
@@ -206,7 +206,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         if (detected != autoDetectedBrand || deviceName != detectedSourceName) {
             autoDetectedBrand = detected
             detectedSourceName = deviceName
-            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Brand detection updated: ${detected.nameStr} (Source: $deviceName, Active: ${lastSourceId != null})")
+            if (BuildConfig.DEBUG) Log.d("KogSense", "Brand detection updated: ${detected.nameStr} (Source: $deviceName, Active: ${lastSourceId != null})")
             sharedPreferences.edit()
                 .putString(KEY_DETECTED_BRAND, detected.nameStr)
                 .putString(KEY_DETECTED_SOURCE_NAME, deviceName)
@@ -287,7 +287,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
                                           blockedGear > 0 && rearGear > blockedGear
             
             if (definitelyNotSramBlocked && autoDetectedBrand != DrivetrainBrand.SHIMANO && drivetrainBrandPref == DrivetrainBrand.AUTO) {
-                if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Behavioral Detection: Reached gear $rearGear in small ring. Identifying as Shimano.")
+                if (BuildConfig.DEBUG) Log.d("KogSense", "Behavioral Detection: Reached gear $rearGear in small ring. Identifying as Shimano.")
                 autoDetectedBrand = DrivetrainBrand.SHIMANO
                 drivetrainBrand = DrivetrainBrand.SHIMANO
                 val activeDeviceName = lastSavedDevices.find { it.id == lastSourceId }?.name ?: detectedSourceName
@@ -305,7 +305,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
             lastRearCount = rearCount
 
             if (BuildConfig.DEBUG && (rearChanged || frontChanged || shiftAttempted)) {
-                Log.d("KSRAMBeep", "Update - F: $frontGear/$frontMax, R: $rearGear, Max: $baseMax, Brand: ${drivetrainBrand.nameStr}, FC: $frontChanged, RC: $rearChanged, SA: $shiftAttempted")
+                Log.d("KogSense", "Update - F: $frontGear/$frontMax, R: $rearGear, Max: $baseMax, Brand: ${drivetrainBrand.nameStr}, FC: $frontChanged, RC: $rearChanged, SA: $shiftAttempted")
             }
 
             val isSram = drivetrainBrand == DrivetrainBrand.SRAM
@@ -322,9 +322,9 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
             if (rearChanged || (shiftAttempted && (isLowLimit || isHighLimit))) {
                 val isCompensationShift = frontChanged || (now - lastFrontShiftTimestamp < COMPENSATION_SHIFT_WINDOW_MS)
                 if (isCompensationShift) {
-                    if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Muting beep for compensation shift")
+                    if (BuildConfig.DEBUG) Log.d("KogSense", "Muting beep for compensation shift")
                 } else if (brandSwitchedThisUpdate) {
-                    if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Muting beep due to brand switch correction")
+                    if (BuildConfig.DEBUG) Log.d("KogSense", "Muting beep due to brand switch correction")
                 } else {
                     val timeSinceLastBeep = now - lastBeepTimestamp
                     val retryDelayMs = minBeepRetryDelay * 1000L
@@ -333,11 +333,11 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
                     // OR if we are already at a limit and the user shifted again (detected via shift count) after the delay.
                     if (rearChanged || timeSinceLastBeep >= retryDelayMs) {
                         if (isLowLimit && lowGearAlertEnabled) {
-                            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Triggering Low Limit Beep. Proactive: $rearChanged")
+                            if (BuildConfig.DEBUG) Log.d("KogSense", "Triggering Low Limit Beep. Proactive: $rearChanged")
                             beepFreq = LOW_LIMIT_BEEP_FREQUENCY_HZ
                             lastBeepTimestamp = now
                         } else if (isHighLimit && highGearAlertEnabled) {
-                            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Triggering High Limit Beep. Proactive: $rearChanged")
+                            if (BuildConfig.DEBUG) Log.d("KogSense", "Triggering High Limit Beep. Proactive: $rearChanged")
                             beepFreq = HIGH_LIMIT_BEEP_FREQUENCY_HZ
                             lastBeepTimestamp = now
                         }
@@ -358,7 +358,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
     }
 
     override fun onDestroy() {
-        val sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val sharedPreferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         sharedPreferences.unregisterOnSharedPreferenceChangeListener(prefsListener)
         gearConsumerId?.let { karooSystem.removeConsumer(it) }
         rearCountConsumerId?.let { karooSystem.removeConsumer(it) }
@@ -368,7 +368,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
     }
 
     companion object {
-        private const val PREFS_NAME = "ksram_beep_prefs"
+        private const val PREFS_NAME = "kogsense_prefs"
         private const val KEY_DETECTED_BRAND = "detected_brand"
         private const val KEY_DETECTED_SOURCE_NAME = "detected_source_name"
         private const val KEY_DRIVETRAIN_BRAND_PREF = "pref_drivetrain_brand"

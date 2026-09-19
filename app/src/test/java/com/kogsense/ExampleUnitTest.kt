@@ -1,4 +1,4 @@
-package com.example.ksram_beep
+package com.kogsense
 
 import org.junit.Test
 

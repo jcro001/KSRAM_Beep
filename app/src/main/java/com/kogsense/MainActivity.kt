@@ -1,4 +1,4 @@
-package com.example.ksram_beep
+package com.kogsense
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,7 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ksram_beep.ui.theme.KSRAM_BeepTheme
+import com.kogsense.ui.theme.KogSenseTheme
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -63,17 +64,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            KSRAM_BeepTheme {
-                KSRAMBeepScreen()
+            KogSenseTheme {
+                KogSenseScreen()
             }
         }
     }
 }
 
 @Composable
-fun KSRAMBeepScreen() {
+fun KogSenseScreen() {
     val context = LocalContext.current
-    val sharedPreferences = remember { context.getSharedPreferences("ksram_beep_prefs", Context.MODE_PRIVATE) }
+    val sharedPreferences = remember { context.getSharedPreferences("kogsense_prefs", Context.MODE_PRIVATE) }
     
     var lowGearAlertEnabled by remember {
         mutableStateOf(sharedPreferences.getBoolean("low_gear_alert_enabled", true))
@@ -98,12 +99,12 @@ fun KSRAMBeepScreen() {
     }
 
     LaunchedEffect(Unit) {
-        if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "MainActivity UI started. Initial brand: $autoDetectedBrand")
+        if (BuildConfig.DEBUG) Log.d("KogSense", "MainActivity UI started. Initial brand: $autoDetectedBrand")
     }
 
     val listener = remember {
         SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
-            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Pref change detected: $key")
+            if (BuildConfig.DEBUG) Log.d("KogSense", "Pref change detected: $key")
             when (key) {
                 "detected_brand" -> {
                     autoDetectedBrand = prefs.getString(key, "None") ?: "None"
@@ -154,7 +155,7 @@ fun KSRAMBeepScreen() {
                     .padding(top = 48.dp, start = 24.dp, end = 24.dp, bottom = 16.dp)
             ) {
                 Text(
-                    text = "KSRAM Beep Config",
+                    text = "KogSense Config",
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -291,7 +292,7 @@ fun <T> DropdownSettingCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
             modifier = Modifier
@@ -369,7 +370,7 @@ fun CompactToggleCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
             modifier = Modifier
@@ -455,7 +456,7 @@ fun InfoCard(title: String, description: String, icon: ImageVector) {
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
             modifier = Modifier
@@ -489,7 +490,7 @@ fun InfoCard(title: String, description: String, icon: ImageVector) {
 @Preview(showBackground = true, device = "spec:width=411dp,height=891dp")
 @Composable
 fun DefaultPreview() {
-    KSRAM_BeepTheme {
-        KSRAMBeepScreen()
+    KogSenseTheme {
+        KogSenseScreen()
     }
 }
