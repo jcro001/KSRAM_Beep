@@ -28,6 +28,7 @@ enum class DrivetrainBrand(val nameStr: String) {
 class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
     private lateinit var karooSystem: KarooSystemService
     private var gearConsumerId: String? = null
+    private var rearCountConsumerId: String? = null
     private var deviceConsumerId: String? = null
 
     private var lastFrontGearIndex: Int = -1
@@ -198,14 +199,10 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
 
     private fun subscribeToGears() {
         gearConsumerId?.let { karooSystem.removeConsumer(it) }
+        rearCountConsumerId?.let { karooSystem.removeConsumer(it) }
         
-        val types = listOf(
-            DataType.Type.SHIFTING_GEARS,
-            DataType.Type.SHIFTING_COUNT_REAR
-        )
-
         gearConsumerId = karooSystem.addConsumer<OnStreamState>(
-            params = OnStreamState.StartStreaming(types.first()), // Start with gears
+            params = OnStreamState.StartStreaming(DataType.Type.SHIFTING_GEARS),
             onEvent = { event ->
                 val state = event.state
                 if (state is StreamState.Streaming) {
@@ -214,8 +211,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
             }
         )
         
-        // Add additional consumer for counts if not in main stream
-        karooSystem.addConsumer<OnStreamState>(
+        rearCountConsumerId = karooSystem.addConsumer<OnStreamState>(
             params = OnStreamState.StartStreaming(DataType.Type.SHIFTING_COUNT_REAR),
             onEvent = { event ->
                 val state = event.state
@@ -253,7 +249,6 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         // BEHAVIORAL DETECTION:
         // Notice which system it is based on gear behavior.
         // 1. If we reach a gear that is blocked on SRAM AXS 2x (e.g. 1/12), we are Shimano.
-        // 2. If we are currently at gear 12, we are Shimano.
         val blockedGear = when (baseMax) {
             12 -> 11
             11 -> 10
@@ -261,13 +256,15 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         }
         
         var brandSwitchedThisUpdate = false
-        val definitelyNotSramBlocked = (rearGear > blockedGear && blockedGear > 0 && frontGear == 1) || (rearGear == 12 && baseMax == 12)
+        // Only trigger behavioral detection if we have enough info and are in Auto mode
+        val definitelyNotSramBlocked = baseMax > 0 && frontMax > 1 && frontGear == 1 && 
+                                      blockedGear > 0 && rearGear > blockedGear
         
         if (definitelyNotSramBlocked && autoDetectedBrand != DrivetrainBrand.SHIMANO && drivetrainBrandPref == DrivetrainBrand.AUTO) {
-            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Behavioral Detection: Reached gear $rearGear. Identifying as Shimano.")
+            if (BuildConfig.DEBUG) Log.d("KSRAMBeep", "Behavioral Detection: Reached gear $rearGear in small ring. Identifying as Shimano.")
             autoDetectedBrand = DrivetrainBrand.SHIMANO
             drivetrainBrand = DrivetrainBrand.SHIMANO
-            val activeDeviceName = lastSavedDevices.find { it.id == lastSourceId }?.name ?: ""
+            val activeDeviceName = lastSavedDevices.find { it.id == lastSourceId }?.name ?: detectedSourceName
             detectedSourceName = activeDeviceName
             val sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             sharedPreferences.edit()
@@ -333,6 +330,7 @@ class KSRAMBeepExtension : KarooExtension("ksram-beep", "1.0.0") {
         val sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         sharedPreferences.unregisterOnSharedPreferenceChangeListener(prefsListener)
         gearConsumerId?.let { karooSystem.removeConsumer(it) }
+        rearCountConsumerId?.let { karooSystem.removeConsumer(it) }
         deviceConsumerId?.let { karooSystem.removeConsumer(it) }
         karooSystem.disconnect()
         super.onDestroy()
